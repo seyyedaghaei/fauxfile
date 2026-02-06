@@ -2,14 +2,21 @@ package server
 
 import (
 	"crypto/rand"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"path"
-	"strconv"
 	"strings"
 
+	"github.com/seyyedaghaei/fauxfile/internal/hash"
 	"github.com/seyyedaghaei/fauxfile/internal/parse"
 )
+
+// trailerWriter is satisfied by *http.response when using chunked encoding.
+type trailerWriter interface {
+	http.ResponseWriter
+	Trailer() http.Header
+}
 
 // Server holds config for download/upload handlers.
 type Server struct {
@@ -17,6 +24,19 @@ type Server struct {
 	MaxUploadBytes   int64
 	DefaultHash      string
 	DefaultRespType  string
+}
+
+func (s *Server) hashAlgo(r *http.Request) string {
+	if q := r.URL.Query().Get("hash"); q != "" && hash.Supported(q) {
+		return strings.ToLower(q)
+	}
+	if h := r.Header.Get("X-Hash-Algorithm"); h != "" && hash.Supported(h) {
+		return strings.ToLower(h)
+	}
+	if s.DefaultHash != "" && hash.Supported(s.DefaultHash) {
+		return strings.ToLower(s.DefaultHash)
+	}
+	return "sha256"
 }
 
 // downloadSize returns size in bytes from request. Path wins over query.
@@ -54,10 +74,19 @@ func (s *Server) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	algo := s.hashAlgo(r)
+	hasher := hash.New(algo)
+	if hasher == nil {
+		http.Error(w, "unsupported hash algorithm", http.StatusBadRequest)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	w.Header().Set("Trailer", "X-Content-Hash, X-Hash-Algorithm")
+	// Omit Content-Length so we use chunked encoding and can send trailers
 	w.WriteHeader(http.StatusOK)
 
+	multi := io.MultiWriter(hasher, w)
 	const chunk = 64 * 1024
 	written := int64(0)
 	buf := make([]byte, chunk)
@@ -69,11 +98,16 @@ func (s *Server) Download(w http.ResponseWriter, r *http.Request) {
 		if _, err := rand.Read(buf[:n]); err != nil {
 			return
 		}
-		nw, err := w.Write(buf[:n])
+		nw, err := multi.Write(buf[:n])
 		written += int64(nw)
 		if err != nil || nw != n {
 			return
 		}
+	}
+
+	if tw, ok := w.(trailerWriter); ok {
+		tw.Trailer().Set("X-Content-Hash", hex.EncodeToString(hasher.Sum(nil)))
+		tw.Trailer().Set("X-Hash-Algorithm", algo)
 	}
 }
 
