@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net/http"
 	"path"
@@ -111,12 +112,59 @@ func (s *Server) Download(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) responseType(r *http.Request) string {
+	if q := r.URL.Query().Get("type"); q != "" {
+		switch strings.ToLower(q) {
+		case "json", "text":
+			return strings.ToLower(q)
+		}
+	}
+	if s.DefaultRespType != "" {
+		switch strings.ToLower(s.DefaultRespType) {
+		case "json", "text":
+			return strings.ToLower(s.DefaultRespType)
+		}
+	}
+	return "text"
+}
+
 func (s *Server) Upload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	_, _ = io.Copy(io.Discard, r.Body)
+
+	algo := s.hashAlgo(r)
+	hasher := hash.New(algo)
+	if hasher == nil {
+		http.Error(w, "unsupported hash algorithm", http.StatusBadRequest)
+		return
+	}
+
+	body := r.Body
+	if s.MaxUploadBytes > 0 {
+		body = io.NopCloser(io.LimitReader(r.Body, s.MaxUploadBytes))
+	}
+	hexHash, err := hash.SumReader(algo, body)
 	r.Body.Close()
-	w.WriteHeader(http.StatusNotImplemented)
+	if err != nil {
+		http.Error(w, "read error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("X-Content-Hash", hexHash)
+	w.Header().Set("X-Hash-Algorithm", algo)
+
+	typ := s.responseType(r)
+	switch typ {
+	case "json":
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		enc := json.NewEncoder(w)
+		_ = enc.Encode(map[string]string{"hash": hexHash, "algorithm": algo})
+	default:
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(hexHash))
+	}
 }
