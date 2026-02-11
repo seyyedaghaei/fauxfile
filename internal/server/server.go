@@ -146,7 +146,7 @@ func (s *Server) Upload(w http.ResponseWriter, r *http.Request) {
 		body = io.NopCloser(io.LimitReader(r.Body, s.MaxUploadBytes))
 	}
 	hexHash, err := hash.SumReader(algo, body)
-	r.Body.Close()
+	_ = r.Body.Close()
 	if err != nil {
 		http.Error(w, "read error", http.StatusInternalServerError)
 		return
@@ -165,6 +165,6 @@ func (s *Server) Upload(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(hexHash))
+		_, _ = w.Write([]byte(hexHash))
 	}
 }

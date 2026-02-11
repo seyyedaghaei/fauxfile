@@ -36,7 +36,7 @@ func Bytes(s string) (int64, error) {
 		return 0, errors.New("size must be non-negative")
 	}
 
-	var mult float64 = 1
+	var mult float64
 	switch unit {
 	case "", "b", "byte", "bytes":
 		mult = 1

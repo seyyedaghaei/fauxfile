@@ -6,6 +6,7 @@ fauxfile
 *.test
 *.out
 go.work
+dist/
 
 # IDE / editor
 .idea/
