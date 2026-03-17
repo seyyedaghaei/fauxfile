@@ -2,11 +2,27 @@
 
 In-memory download/upload server for benchmarking. No real files are read or written; downloads are generated on the fly and uploads are hashed in memory then discarded.
 
+## Install
+
+```bash
+go install github.com/seyyedaghaei/fauxfile/cmd/fauxfile@latest
+```
+
+This installs the `fauxfile` binary to `$GOPATH/bin` or `$HOME/go/bin`. Ensure that directory is on your `PATH`.
+
 ## Build
 
 ```bash
 go build -o fauxfile ./cmd/fauxfile
 ```
+
+To embed a version (e.g. for releases):
+
+```bash
+go build -ldflags "-X main.Version=v1.0.0" -o fauxfile ./cmd/fauxfile
+```
+
+Or with Make: `make build-version VERSION=v1.0.0`
 
 ## Run
 
@@ -14,17 +30,24 @@ go build -o fauxfile ./cmd/fauxfile
 ./fauxfile
 ```
 
-Listens on `:8080` by default. Override with `-addr` or the `FAUXFILE_ADDR` environment variable (flag overrides env).
+Listens on `:8080` by default. Override with `--listen` (or `-l`) or the `FAUXFILE_ADDR` environment variable (flag overrides env).
 
 ## Flags
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-addr` | `:8080` | Listen address |
-| `-max-size` | (none) | Max download size, e.g. `1g`, `100m`; empty = no limit |
-| `-max-upload` | (none) | Max upload body size, e.g. `100m`; empty = no limit |
-| `-hash` | `sha256` | Default hash algorithm: `sha256`, `sha512`, `sha1`, `md5` |
-| `-response-type` | `text` | Default upload response body: `text` or `json` |
+| Flag (short) | Default | Description |
+|--------------|---------|-------------|
+| `--listen` (`-l`) | `:8080` | Listen address |
+| `--max-size` (`-s`) | (none) | Max download size, e.g. `1g`, `100m`; empty = no limit |
+| `--max-upload` (`-u`) | (none) | Max upload body size, e.g. `100m`; empty = no limit |
+| `--hash` (`-H`) | `sha256` | Default hash algorithm: `sha256`, `sha512`, `sha1`, `md5` |
+| `--response-type` (`-r`) | `text` | Default upload response body: `text` or `json` |
+| `--tls-cert` (`-c`) | (none) | Path to TLS certificate file (requires `--tls-key`) |
+| `--tls-key` (`-k`) | (none) | Path to TLS private key file (requires `--tls-cert`) |
+| `--version` (`-v`) | — | Print version and exit |
+
+**Version:** The binary can be built with a version string via `-ldflags "-X main.Version=..."`. That version is printed by `--version`, returned by `GET /version`, and sent in the `X-Fauxfile-Version` response header on every response.
+
+**TLS:** If both `--tls-cert` and `--tls-key` are set, the server listens with HTTPS. Example: `./fauxfile --tls-cert=cert.pem --tls-key=key.pem --listen=:8443`
 
 ## Download (GET)
 
@@ -86,4 +109,4 @@ echo -n "hello" | curl -X POST -H "X-Hash-Algorithm: sha512" -d @- "http://local
 
 ## License
 
-See repository.
+MIT License — see [LICENSE](LICENSE).

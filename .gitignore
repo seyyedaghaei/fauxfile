@@ -1,5 +1,5 @@
-# Binary
-fauxfile
+# Binary (root only; do not ignore cmd/fauxfile/)
+/fauxfile
 
 # Go
 *.exe

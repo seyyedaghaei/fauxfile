@@ -2,9 +2,13 @@
 
 BINARY := fauxfile
 LINT_VERSION := v1.61.0
+VERSION ?= dev
 
 build:
 	go build -o $(BINARY) ./cmd/fauxfile
+
+build-version:
+	go build -ldflags "-X main.Version=$(VERSION)" -o $(BINARY) ./cmd/fauxfile
 
 test:
 	go test ./...

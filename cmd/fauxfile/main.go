@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -10,16 +11,27 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// Version is set at build time via -ldflags "-X main.Version=..."
+var Version = "dev"
+
 func main() {
-	addr := pflag.String("addr", ":8080", "listen address")
-	maxSize := pflag.String("max-size", "", "maximum download size (e.g. 1g, 100m); empty = no limit")
-	maxUpload := pflag.String("max-upload", "", "maximum upload body size (e.g. 100m); empty = no limit")
-	defaultHash := pflag.String("hash", "sha256", "default hash algorithm (sha256, sha512, sha1, md5)")
-	defaultResponseType := pflag.String("response-type", "text", "default upload response type (text, json)")
+	listen := pflag.StringP("listen", "l", ":8080", "listen address")
+	maxSize := pflag.StringP("max-size", "s", "", "maximum download size (e.g. 1g, 100m); empty = no limit")
+	maxUpload := pflag.StringP("max-upload", "u", "", "maximum upload body size (e.g. 100m); empty = no limit")
+	defaultHash := pflag.StringP("hash", "H", "sha256", "default hash algorithm (sha256, sha512, sha1, md5)")
+	defaultResponseType := pflag.StringP("response-type", "r", "text", "default upload response type (text, json)")
+	tlsCert := pflag.StringP("tls-cert", "c", "", "path to TLS certificate file (enables HTTPS with --tls-key)")
+	tlsKey := pflag.StringP("tls-key", "k", "", "path to TLS private key file (enables HTTPS with --tls-cert)")
+	showVersion := pflag.BoolP("version", "v", false, "print version and exit")
 	pflag.Parse()
 
-	if a := os.Getenv("FAUXFILE_ADDR"); a != "" && !pflag.Lookup("addr").Changed {
-		*addr = a
+	if *showVersion {
+		fmt.Println(Version)
+		os.Exit(0)
+	}
+
+	if a := os.Getenv("FAUXFILE_ADDR"); a != "" && !pflag.Lookup("listen").Changed {
+		*listen = a
 	}
 
 	var maxDownload, maxUploadBytes int64
@@ -43,15 +55,35 @@ func main() {
 		MaxUploadBytes:   maxUploadBytes,
 		DefaultHash:     *defaultHash,
 		DefaultRespType: *defaultResponseType,
+		Version:         Version,
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/download", srv.Download)
 	mux.HandleFunc("/download/", srv.Download)
 	mux.HandleFunc("/upload", srv.Upload)
+	mux.HandleFunc("/version", srv.ServeVersion)
 
-	log.Printf("fauxfile listening on %s", *addr)
-	if err := http.ListenAndServe(*addr, mux); err != nil {
-		log.Fatalf("listen: %v", err)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if Version != "" {
+			w.Header().Set("X-Fauxfile-Version", Version)
+		}
+		mux.ServeHTTP(w, r)
+	})
+
+	useTLS := *tlsCert != "" && *tlsKey != ""
+	if useTLS {
+		log.Printf("fauxfile listening on %s (TLS)", *listen)
+		if err := http.ListenAndServeTLS(*listen, *tlsCert, *tlsKey, handler); err != nil {
+			log.Fatalf("listen: %v", err)
+		}
+	} else {
+		if *tlsCert != "" || *tlsKey != "" {
+			log.Fatal("both --tls-cert and --tls-key must be set to enable HTTPS")
+		}
+		log.Printf("fauxfile listening on %s", *listen)
+		if err := http.ListenAndServe(*listen, handler); err != nil {
+			log.Fatalf("listen: %v", err)
+		}
 	}
 }

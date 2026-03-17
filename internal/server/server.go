@@ -25,6 +25,7 @@ type Server struct {
 	MaxUploadBytes   int64
 	DefaultHash      string
 	DefaultRespType  string
+	Version          string
 }
 
 func (s *Server) hashAlgo(r *http.Request) string {
@@ -167,4 +168,19 @@ func (s *Server) Upload(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(hexHash))
 	}
+}
+
+// ServeVersion responds to GET /version with the server version (plain text).
+func (s *Server) ServeVersion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	version := s.Version
+	if version == "" {
+		version = "dev"
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(version))
 }
