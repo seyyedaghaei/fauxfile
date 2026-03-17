@@ -2,75 +2,46 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
-          - goos: windows
-            goarch: amd64
-          - goos: windows
-            goarch: 386
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      - name: build
+      - name: Build binaries
         run: |
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -ldflags "-X main.Version=${{ github.ref_name }}" -o fauxfile${{ matrix.goos == 'windows' && '.exe' || '' }} ./cmd/fauxfile
+          export CGO_ENABLED=0
+          VERSION=${GITHUB_REF#refs/tags/}
+          GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X main.Version=${VERSION}" -o fauxfile-linux-amd64 ./cmd/fauxfile
+          GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X main.Version=${VERSION}" -o fauxfile-linux-arm64 ./cmd/fauxfile
+          GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w -X main.Version=${VERSION}" -o fauxfile-darwin-amd64 ./cmd/fauxfile
+          GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w -X main.Version=${VERSION}" -o fauxfile-darwin-arm64 ./cmd/fauxfile
+          GOOS=windows GOARCH=amd64 go build -ldflags "-s -w -X main.Version=${VERSION}" -o fauxfile-windows-amd64.exe ./cmd/fauxfile
+          GOOS=windows GOARCH=386 go build -ldflags "-s -w -X main.Version=${VERSION}" -o fauxfile-windows-386.exe ./cmd/fauxfile
+          mkdir -p dist
+          mv fauxfile-* dist/
 
-      - name: upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: fauxfile-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: fauxfile${{ matrix.goos == 'windows' && '.exe' || '' }}
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: prepare release assets
-        run: |
-          mkdir -p release
-          for d in artifacts/fauxfile-*; do
-            name=$(basename "$d")
-            os=$(echo "$name" | cut -d- -f2)
-            arch=$(echo "$name" | cut -d- -f3)
-            bin="$d/fauxfile"
-            [ -f "$d/fauxfile.exe" ] && bin="$d/fauxfile.exe"
-            ext=""
-            [ "$os" = "windows" ] && ext=".exe"
-            cp "$bin" "release/fauxfile-${os}-${arch}${ext}"
-          done
-          ls -la release/
-
-      - name: release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*
+          files: |
+            dist/fauxfile-linux-amd64
+            dist/fauxfile-linux-arm64
+            dist/fauxfile-darwin-amd64
+            dist/fauxfile-darwin-arm64
+            dist/fauxfile-windows-amd64.exe
+            dist/fauxfile-windows-386.exe
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
