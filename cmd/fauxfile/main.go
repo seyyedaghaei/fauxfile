@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/seyyedaghaei/fauxfile/internal/parse"
 	"github.com/seyyedaghaei/fauxfile/internal/server"
@@ -71,19 +75,35 @@ func main() {
 		mux.ServeHTTP(w, r)
 	})
 
-	useTLS := *tlsCert != "" && *tlsKey != ""
-	if useTLS {
-		log.Printf("fauxfile listening on %s (TLS)", *listen)
-		if err := http.ListenAndServeTLS(*listen, *tlsCert, *tlsKey, handler); err != nil {
-			log.Fatalf("listen: %v", err)
-		}
-	} else {
-		if *tlsCert != "" || *tlsKey != "" {
+	if *tlsCert != "" || *tlsKey != "" {
+		if *tlsCert == "" || *tlsKey == "" {
 			log.Fatal("both --tls-cert and --tls-key must be set to enable HTTPS")
 		}
-		log.Printf("fauxfile listening on %s", *listen)
-		if err := http.ListenAndServe(*listen, handler); err != nil {
-			log.Fatalf("listen: %v", err)
-		}
 	}
+
+	httpSrv := &http.Server{Addr: *listen, Handler: handler}
+	go func() {
+		if *tlsCert != "" && *tlsKey != "" {
+			log.Printf("fauxfile listening on %s (TLS)", *listen)
+			if err := httpSrv.ListenAndServeTLS(*tlsCert, *tlsKey); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("listen: %v", err)
+			}
+		} else {
+			log.Printf("fauxfile listening on %s", *listen)
+			if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("listen: %v", err)
+			}
+		}
+	}()
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	<-sig
+	log.Print("shutting down...")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := httpSrv.Shutdown(ctx); err != nil {
+		log.Fatalf("shutdown: %v", err)
+	}
+	log.Print("done")
 }

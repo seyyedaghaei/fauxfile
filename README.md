@@ -30,7 +30,7 @@ Or with Make: `make build-version VERSION=v1.0.0`
 ./fauxfile
 ```
 
-Listens on `:8080` by default. Override with `--listen` (or `-l`) or the `FAUXFILE_ADDR` environment variable (flag overrides env).
+Listens on `:8080` by default. Override with `--listen` (or `-l`) or the `FAUXFILE_ADDR` environment variable (flag overrides env). On SIGINT or SIGTERM the server stops accepting new connections, waits for in-flight requests (up to 30s), then exits.
 
 ## Flags
 
